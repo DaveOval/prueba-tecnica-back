@@ -18,18 +18,18 @@ async def register(user: UserCreate):
         password = user_data.pop('password')
         user_data['password_hash'] = get_password_hash(password)
         
-        u = User(**user_data)
-        u.save()
+        user = User(**user_data)
+        user.save()
         
         return UserInDB(
-            id=str(u.id),
-            name=u.name,
-            last_name=u.last_name,
-            email=u.email,
-            is_active=u.is_active,
-            role=u.role,
-            created_at=u.created_at,
-            updated_at=u.updated_at
+            id=str(user.id),
+            name=user.name,
+            last_name=user.last_name,
+            email=user.email,
+            is_active=user.is_active,
+            role=user.role,
+            created_at=user.created_at,
+            updated_at=user.updated_at
         )
     except NotUniqueError:
         raise HTTPException(status_code=400, detail="Email already exists")
