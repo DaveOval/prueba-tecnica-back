@@ -9,7 +9,7 @@ from app.dependencies import get_current_user
 router = APIRouter()
 
 # Get user by id
-@router.get('/users/{user_id}', response_model=UserInDB)
+@router.get('/{user_id}', response_model=UserInDB)
 def get_user(user_id: str):
     try:
         u = User.objects.get(id=user_id)
@@ -27,7 +27,7 @@ def get_user(user_id: str):
         raise HTTPException(status_code=404, detail="User not found")
 
 # Update user
-@router.put('/users/{user_id}', response_model=UserInDB)
+@router.put('/{user_id}', response_model=UserInDB)
 def update_user(user_id: str, user: UserUpdate):
     try:
         u = User.objects.get(id=user_id)
