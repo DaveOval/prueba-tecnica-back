@@ -30,21 +30,21 @@ def get_user(user_id: str):
 @router.put('/{user_id}', response_model=UserInDB)
 def update_user(user_id: str, user: UserUpdate):
     try:
-        u = User.objects.get(id=user_id)
+        user = User.objects.get(id=user_id)
         update_data = user.dict(exclude_unset=True)
               
-        u.update(**update_data)
-        u.reload()
+        user.update(**update_data)
+        user.reload()
         
         return UserInDB(
-            id=str(u.id),
-            name=u.name,
-            last_name=u.last_name,
-            email=u.email,
-            is_active=u.is_active,
-            role=u.role,
-            created_at=u.created_at,
-            updated_at=u.updated_at
+            id=str(user.id),
+            name=user.name,
+            last_name=user.last_name,
+            email=user.email,
+            is_active=user.is_active,
+            role=user.role,
+            created_at=user.created_at,
+            updated_at=user.updated_at
         )
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="User not found")
