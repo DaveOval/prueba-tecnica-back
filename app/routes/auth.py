@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Response
 from app.models.user import User
 from app.schemas.user import UserCreate, UserInDB, UserLogin, UserUpdate
 from app.utils.password import verify_password, get_password_hash
@@ -7,6 +7,7 @@ from app.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from datetime import timedelta
 from mongoengine.errors import DoesNotExist, NotUniqueError, ValidationError
 from app.dependencies import get_current_user
+import logging
 
 router = APIRouter()
 
@@ -38,10 +39,22 @@ async def register(user: UserCreate):
 
 # Login user
 @router.post("/login")
-async def login(user: UserLogin):
+async def login(response: Response, user: UserLogin):
     try:
+        logging.info(f"Attempting login for email: {user.email}")
         user_in_db = User.objects.get(email=user.email)
-        if not verify_password(user.password, user_in_db.password_hash):
+        
+        if not user_in_db.is_active:
+            logging.warning(f"Login attempt for inactive user: {user.email}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User account is inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        password_valid = verify_password(user.password, user_in_db.password_hash)
+        if not password_valid:
+            logging.warning(f"Invalid password for user: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -58,13 +71,41 @@ async def login(user: UserLogin):
             expires_delta=access_token_expires
         )
         
-        return {"access_token": access_token, "token_type": "bearer"}
+        # Set cookie with the JWT token
+        response.set_cookie(
+            key="auth-token",
+            value=access_token,
+            httponly=True,
+            secure=False, 
+            samesite="lax",
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60 
+        )
+        
+        logging.info(f"Successful login for user: {user.email}")
+        return {
+            "message": "Login successful",
+            "user": {
+                "id": str(user_in_db.id),
+                "email": user_in_db.email,
+                "name": user_in_db.name,
+                "last_name": user_in_db.last_name,
+                "role": user_in_db.role,
+                "token": access_token
+            }
+        }
         
     except DoesNotExist:
+        logging.warning(f"Login attempt for non-existent user: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+    except Exception as e:
+        logging.error(f"Unexpected error during login: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred"
         )
 
 # Update user profile
