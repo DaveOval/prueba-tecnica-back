@@ -3,6 +3,8 @@ from typing import List
 from app.models.user import User
 from app.schemas.user import UserUpdate, UserInDB
 from mongoengine.errors import  ValidationError, DoesNotExist
+from fastapi import Depends
+from app.dependencies import get_current_user
 
 router = APIRouter()
 
@@ -52,7 +54,7 @@ def update_user(user_id: str, user: UserUpdate):
     
 # Get all users
 @router.get('/', response_model=List[UserInDB])
-def get_users():
+def get_users(current_user: User = Depends(get_current_user)):
     users = User.objects.all()
     return [UserInDB(
         id=str(user.id),

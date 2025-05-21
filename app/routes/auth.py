@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from app.models.user import User
 from app.schemas.user import UserCreate, UserInDB, UserLogin
 from app.utils.password import verify_password, get_password_hash
+from app.utils.jwt import create_access_token
+from app.config import ACCESS_TOKEN_EXPIRE_MINUTES
+from datetime import timedelta
 from mongoengine.errors import DoesNotExist, NotUniqueError, ValidationError
 
 router = APIRouter()
@@ -43,7 +46,19 @@ async def login(user: UserLogin):
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return {"message": "Login successful"}
+        
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={
+                "sub": str(user_in_db.id),
+                "email": user_in_db.email,
+                "role": user_in_db.role 
+            },
+            expires_delta=access_token_expires
+        )
+        
+        return {"access_token": access_token, "token_type": "bearer"}
+        
     except DoesNotExist:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
