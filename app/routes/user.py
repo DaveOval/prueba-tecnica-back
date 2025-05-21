@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from app.models.user import User
-from app.schemas.user import UserUpdate, UserInDB
-from mongoengine.errors import  ValidationError, DoesNotExist
+from app.schemas.user import UserInDB
+from mongoengine.errors import DoesNotExist
 from fastapi import Depends
 from app.dependencies import get_current_user
 
@@ -25,31 +25,6 @@ def get_user(user_id: str):
         )
     except DoesNotExist:
         raise HTTPException(status_code=404, detail="User not found")
-
-# Update user
-@router.put('/{user_id}', response_model=UserInDB)
-def update_user(user_id: str, user: UserUpdate):
-    try:
-        user = User.objects.get(id=user_id)
-        update_data = user.dict(exclude_unset=True)
-              
-        user.update(**update_data)
-        user.reload()
-        
-        return UserInDB(
-            id=str(user.id),
-            name=user.name,
-            last_name=user.last_name,
-            email=user.email,
-            is_active=user.is_active,
-            role=user.role,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
-    except DoesNotExist:
-        raise HTTPException(status_code=404, detail="User not found")
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
     
 # Get all users
 @router.get('/', response_model=List[UserInDB])
