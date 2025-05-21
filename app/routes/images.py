@@ -1,0 +1,134 @@
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from app.models.images import Image
+from app.models.user import User
+from app.dependencies import get_current_user
+from app.services.storage import save_upload_file
+from app.services.image_processor import proccess_image
+from typing import List
+from app.utils.validate_image import validate_image
+import os
+
+import io
+
+router = APIRouter()
+
+# Upload image
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    validate_image(file)
+    
+    # Create directories if they don't exist
+    upload_dir = "uploads/original"
+    processed_dir = "uploads/processed"
+    os.makedirs(upload_dir, exist_ok=True)
+    os.makedirs(processed_dir, exist_ok=True)
+    
+    # Save original file
+    original_path = save_upload_file(file, upload_dir)
+    
+    # Create processed path
+    file_ext = file.filename.split('.')[-1]
+    processed_filename = f"processed_{os.path.basename(original_path)}"
+    processed_path = os.path.join(processed_dir, processed_filename)
+    
+    # Create image record
+    image = Image(
+        user_id=str(current_user.id),
+        original_filename=file.filename,
+        original_path=original_path,
+        processed_path=processed_path,
+        transformations=[]
+    )
+    image.save()
+    
+    return {
+        "message": "Image uploaded successfully",
+        "image_id": str(image.id)
+    }
+
+# Process image
+@router.post("/{image_id}/process")
+async def process_image(
+    image_id: str,
+    transformations: List[str],
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        image = Image.objects.get(id=image_id)
+        
+        # Verify ownership
+        if str(image.user_id) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to process this image"
+            )
+        
+        # Process image
+        proccess_image(image.original_path, image.processed_path, transformations)
+        
+        # Update image record
+        image.transformations = transformations
+        image.save()
+        
+        return {
+            "message": "Image processed successfully",
+            "transformations": transformations
+        }
+        
+    except Image.DoesNotExist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )
+
+# Get user images
+@router.get("/", response_model=List[dict])
+async def get_user_images(current_user: User = Depends(get_current_user)):
+    images = Image.objects(user_id=str(current_user.id))
+    return [
+        {
+            "id": str(img.id),
+            "original_filename": img.original_filename,
+            "original_path": img.original_path,
+            "processed_path": img.processed_path,
+            "transformations": img.transformations,
+            "uploaded_at": img.uploaded_at
+        }
+        for img in images
+    ]
+
+# Get image by ID
+@router.delete("/{image_id}")
+async def delete_image(
+    image_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        image = Image.objects.get(id=image_id)
+        
+        # Verify ownership
+        if str(image.user_id) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this image"
+            )
+        
+        # Delete files
+        if os.path.exists(image.original_path):
+            os.remove(image.original_path)
+        if os.path.exists(image.processed_path):
+            os.remove(image.processed_path)
+        
+        # Delete record
+        image.delete()
+        
+        return {"message": "Image deleted successfully"}
+        
+    except Image.DoesNotExist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image not found"
+        )

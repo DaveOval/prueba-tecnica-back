@@ -32,8 +32,7 @@ def update_user(user_id: str, user: UserUpdate):
     try:
         u = User.objects.get(id=user_id)
         update_data = user.dict(exclude_unset=True)
-        
-            
+              
         u.update(**update_data)
         u.reload()
         
