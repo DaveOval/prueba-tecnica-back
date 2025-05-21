@@ -51,7 +51,16 @@ def update_user(user_id: str, user: UserUpdate):
         raise HTTPException(status_code=422, detail=str(e))
     
 # Get all users
-@router.get('/users', response_model=List[UserInDB])
+@router.get('/', response_model=List[UserInDB])
 def get_users():
     users = User.objects.all()
-    return [UserInDB.from_mongo(user) for user in users]
+    return [UserInDB(
+        id=str(user.id),
+        name=user.name,
+        last_name=user.last_name,
+        email=user.email,
+        is_active=user.is_active,
+        role=user.role,
+        created_at=user.created_at,
+        updated_at=user.updated_at
+    ) for user in users]

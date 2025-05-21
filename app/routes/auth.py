@@ -1,12 +1,10 @@
 from fastapi import APIRouter, HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from app.models.user import User
-from app.schemas.user import UserCreate, UserInDB
+from app.schemas.user import UserCreate, UserInDB, UserLogin
 from app.utils.password import verify_password, get_password_hash
 from mongoengine.errors import DoesNotExist, NotUniqueError, ValidationError
 
 router = APIRouter()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Register user
 @router.post("/register", response_model=UserInDB)
@@ -36,10 +34,10 @@ async def register(user: UserCreate):
 
 # Login user
 @router.post("/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(user: UserLogin):
     try:
-        user = User.objects.get(email=form_data.username)
-        if not verify_password(form_data.password, user.password_hash):
+        user_in_db = User.objects.get(email=user.email)
+        if not verify_password(user.password, user_in_db.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -54,11 +52,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
 
 # Delete user
-@router.delete("/users/{user_id}")
+""" @router.delete("/user/{user_id}")
 async def delete_user(user_id: str):
     try:
         user = User.objects.get(id=user_id)
         user.delete()
         return {"message": "User deleted successfully"}
     except DoesNotExist:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="User not found") """
