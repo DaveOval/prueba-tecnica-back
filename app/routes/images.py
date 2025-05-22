@@ -286,3 +286,58 @@ async def get_image_file(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Image with ID {image_id} not found in database"
         )
+
+@router.get("/original")
+async def get_original_images(current_user: User = Depends(get_current_user)):
+    try:
+        logger.info(f"Getting original images for user: {current_user.email}")
+        images = Image.objects(user_id=str(current_user.id))
+        
+        result = []
+        for img in images:
+            if os.path.exists(img.original_path):
+                with open(img.original_path, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                    file_ext = img.original_filename.split('.')[-1].lower()
+                    result.append({
+                        "id": str(img.id),
+                        "filename": img.original_filename,
+                        "image_data": f"data:image/{file_ext};base64,{encoded_string}",
+                        "uploaded_at": img.uploaded_at.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+        
+        return {"images": result}
+    except Exception as e:
+        logger.error(f"Error getting original images: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error getting original images"
+        )
+
+@router.get("/processed")
+async def get_processed_images(current_user: User = Depends(get_current_user)):
+    try:
+        logger.info(f"Getting processed images for user: {current_user.email}")
+        images = Image.objects(user_id=str(current_user.id))
+        
+        result = []
+        for img in images:
+            if os.path.exists(img.processed_path):
+                with open(img.processed_path, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                    file_ext = img.original_filename.split('.')[-1].lower()
+                    result.append({
+                        "id": str(img.id),
+                        "filename": img.original_filename,
+                        "image_data": f"data:image/{file_ext};base64,{encoded_string}",
+                        "filter_name": img.filter_name,
+                        "uploaded_at": img.uploaded_at.strftime("%Y-%m-%d %H:%M:%S")
+                    })
+        
+        return {"images": result}
+    except Exception as e:
+        logger.error(f"Error getting processed images: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error getting processed images"
+        )
