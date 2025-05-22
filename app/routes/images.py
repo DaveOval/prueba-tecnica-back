@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Response, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi.responses import FileResponse
 from app.models.images import Image
 from app.models.user import User
 from app.dependencies import get_current_user
@@ -10,7 +10,6 @@ from app.utils.validate_image import validate_image
 import os
 import base64
 
-import io
 
 router = APIRouter()
 
@@ -180,17 +179,14 @@ async def serve_image(
             detail=f"Image with ID {image_id} not found in database"
         )
 
+# Get image file in binary format (base64)
 @router.get("/{image_id}/file")
 async def get_image_file(
     image_id: str,
     current_user: User = Depends(get_current_user)
 ):
     try:
-        print(f"Buscando imagen con ID: {image_id}")
         image = Image.objects.get(id=image_id)
-        print(f"Imagen encontrada: {image.original_filename}")
-        print(f"Ruta original: {image.original_path}")
-        print(f"Ruta procesada: {image.processed_path}")
         
         # Verify ownership
         if str(image.user_id) != str(current_user.id):
@@ -203,8 +199,6 @@ async def get_image_file(
         # Check if processed file exists, if not use original
         file_path = image.processed_path if os.path.exists(image.processed_path) else image.original_path
         file_path = file_path.replace("\\", "/")
-        print(f"Usando ruta de archivo: {file_path}")
-        print(f"¿Existe el archivo?: {os.path.exists(file_path)}")
         
         if not os.path.exists(file_path):
             raise HTTPException(
@@ -219,7 +213,7 @@ async def get_image_file(
         )
         
     except Image.DoesNotExist:
-        print(f"No se encontró la imagen con ID: {image_id}")
+        print(f"Image not found: {image_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Image with ID {image_id} not found in database"
