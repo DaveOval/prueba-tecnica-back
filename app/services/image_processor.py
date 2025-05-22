@@ -1,29 +1,33 @@
-from PIL import Image, ImageFilter
-import os
+from PIL import Image, ImageFilter, ImageEnhance
 
 
-def proccess_image(file_path: str, output_path:str, transformations: list):
+def proccess_image(file_path: str, output_path: str, filter_name: str):
     image = Image.open(file_path)
 
-    if "grayscale" in transformations:
-        image
-
-    if "blur" in transformations:
-        image = image.filter(ImageFilter.BLUR)
-
-    if "thumbnail" in transformations:
-        image.thumbnail((100, 100))
-
-    if "rotate" in transformations:
-        image = image.rotate(90)
-
-    if "resize" in transformations:
-        image = image.resize((800, 600))
-
-    if "flip" in transformations:
-        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    if filter_name == "grayscale":
+        image = image.convert("L")
     
-    if "crop" in transformations:
-        image = image.crop((100, 100, 400, 400))
+    elif filter_name == "blur":
+        image = image.filter(ImageFilter.BLUR)
+    
+    elif filter_name == "thumbnail":
+        image.thumbnail((100, 100))
+    
+    elif filter_name == "sepia":
+        # Convert to grayscale first
+        image = image.convert("L")
+        # Create sepia filter
+        sepia_filter = Image.new("RGB", image.size, (255, 240, 192))
+        # Convert grayscale to RGB for blending
+        image = image.convert("RGB")
+        # Blend the images
+        image = Image.blend(image, sepia_filter, 0.5)
+    
+    elif filter_name == "invert":
+        image = Image.eval(image, lambda x: 255 - x)
+    
+    elif filter_name == "brightness":
+        # Always increase brightness by 50%
+        image = ImageEnhance.Brightness(image).enhance(1.5)
 
     image.save(output_path)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Body
 from fastapi.responses import FileResponse
 from app.models.images import Image
 from app.models.user import User
@@ -9,9 +9,17 @@ from typing import List
 from app.utils.validate_image import validate_image
 import os
 import base64
+from pydantic import BaseModel
+
+
+class FilterRequest(BaseModel):
+    filter_name: str
 
 
 router = APIRouter()
+
+def normalize_path(path: str) -> str:
+    return os.path.normpath(path).replace("\\", "/")
 
 # Upload image
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
@@ -22,26 +30,28 @@ async def upload_image(
     validate_image(file)
     
     # Create directories if they don't exist
-    upload_dir = os.path.join("uploads", "original").replace("\\", "/")
-    processed_dir = os.path.join("uploads", "processed").replace("\\", "/")
+    upload_dir = normalize_path(os.path.join("uploads", "original"))
+    processed_dir = normalize_path(os.path.join("uploads", "processed"))
     os.makedirs(upload_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
     
     # Save original file
     original_path = save_upload_file(file, upload_dir)
+    original_path = normalize_path(original_path)
     
     # Create processed path
     file_ext = file.filename.split('.')[-1]
     processed_filename = f"processed_{os.path.basename(original_path)}"
-    processed_path = os.path.join(processed_dir, processed_filename).replace("\\", "/")
+    processed_path = normalize_path(os.path.join(processed_dir, processed_filename))
     
     # Create image record
     image = Image(
         user_id=str(current_user.id),
         original_filename=file.filename,
-        original_path=original_path.replace("\\", "/"),
+        original_path=original_path,
         processed_path=processed_path,
-        transformations=[]
+        filter_name=None,
+        filter_value=None
     )
     image.save()
     
@@ -54,7 +64,7 @@ async def upload_image(
 @router.post("/{image_id}/process")
 async def process_image(
     image_id: str,
-    transformations: List[str],
+    filter_request: FilterRequest,
     current_user: User = Depends(get_current_user)
 ):
     try:
@@ -67,16 +77,40 @@ async def process_image(
                 detail="Not authorized to process this image"
             )
         
+        # Normalize paths
+        original_path = normalize_path(image.original_path)
+        processed_path = normalize_path(image.processed_path)
+        
+        # Verify original image exists
+        if not os.path.exists(original_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Original image file not found at path: {original_path}"
+            )
+        
         # Process image
-        proccess_image(image.original_path, image.processed_path, transformations)
+        try:
+            proccess_image(original_path, processed_path, filter_request.filter_name)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error processing image: {str(e)}"
+            )
+        
+        # Verify processed image was created
+        if not os.path.exists(processed_path):
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error saving processed image at path: {processed_path}"
+            )
         
         # Update image record
-        image.transformations = transformations
+        image.filter_name = filter_request.filter_name
         image.save()
         
         return {
             "message": "Image processed successfully",
-            "transformations": transformations
+            "filter": filter_request.filter_name
         }
         
     except Image.DoesNotExist:
@@ -95,7 +129,8 @@ async def get_user_images(current_user: User = Depends(get_current_user)):
             "original_filename": img.original_filename,
             "original_path": img.original_path,
             "processed_path": img.processed_path,
-            "transformations": img.transformations,
+            "filter_name": img.get_filter_name(),
+            "filter_value": img.get_filter_value(),
             "uploaded_at": img.uploaded_at
         }
         for img in images
@@ -149,10 +184,14 @@ async def serve_image(
                 detail="Not authorized to access this image"
             )
         
-        # Check if processed file exists, if not use original
-        file_path = image.processed_path if os.path.exists(image.processed_path) else image.original_path
-        file_path = file_path.replace("\\", "/")
+        # Normalize paths
+        processed_path = normalize_path(image.processed_path)
+        original_path = normalize_path(image.original_path)
         
+        # Check if processed file exists, if not use original
+        file_path = processed_path if os.path.exists(processed_path) else original_path
+        
+        # Verify the file exists
         if not os.path.exists(file_path):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -160,8 +199,14 @@ async def serve_image(
             )
         
         # Read the image file and convert to base64
-        with open(file_path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        try:
+            with open(file_path, "rb") as image_file:
+                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error reading image file: {str(e)}"
+            )
         
         # Get the file extension to determine the MIME type
         file_ext = image.original_filename.split('.')[-1].lower()
