@@ -7,6 +7,7 @@ from app.services.storage import save_upload_file
 from app.services.image_processor import proccess_image
 from typing import List
 from app.utils.validate_image import validate_image
+from app.utils.logger import setup_logger
 import os
 import base64
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ class FilterRequest(BaseModel):
 
 
 router = APIRouter()
+logger = setup_logger("images")
 
 def normalize_path(path: str) -> str:
     return os.path.normpath(path).replace("\\", "/")
@@ -27,6 +29,7 @@ async def upload_image(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user)
 ):
+    logger.info(f"Image upload attempt by user: {current_user.email}")
     validate_image(file)
     
     # Create directories if they don't exist
@@ -55,6 +58,7 @@ async def upload_image(
     )
     image.save()
     
+    logger.info(f"Image uploaded successfully: {file.filename} by the user: {current_user.email}")
     return {
         "message": "Image uploaded successfully",
         "image_id": str(image.id)
@@ -68,10 +72,12 @@ async def process_image(
     current_user: User = Depends(get_current_user)
 ):
     try:
+        logger.info(f"Image processing attempt {image_id} with filter {filter_request.filter_name}")
         image = Image.objects.get(id=image_id)
         
         # Verify ownership
         if str(image.user_id) != str(current_user.id):
+            logger.warning(f"Attempt at unauthorized image processing {image_id} by user {current_user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to process this image"
@@ -83,6 +89,7 @@ async def process_image(
         
         # Verify original image exists
         if not os.path.exists(original_path):
+            logger.error(f"Original image not found in the path: {original_path}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Original image file not found at path: {original_path}"
@@ -92,6 +99,7 @@ async def process_image(
         try:
             proccess_image(original_path, processed_path, filter_request.filter_name)
         except Exception as e:
+            logger.error(f"Error processing image: {str(e)}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error processing image: {str(e)}"
@@ -99,6 +107,7 @@ async def process_image(
         
         # Verify processed image was created
         if not os.path.exists(processed_path):
+            logger.error(f"Error saving processed image to path: {processed_path}")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Error saving processed image at path: {processed_path}"
@@ -108,12 +117,14 @@ async def process_image(
         image.filter_name = filter_request.filter_name
         image.save()
         
+        logger.info(f"Image {image_id} successfully processed with {filter_request.filter_name} filter")
         return {
             "message": "Image processed successfully",
             "filter": filter_request.filter_name
         }
         
     except Image.DoesNotExist:
+        logger.warning(f"Attempt to process non-existent image: {image_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Image not found"
@@ -122,6 +133,7 @@ async def process_image(
 # Get user images
 @router.get("/", response_model=List[dict])
 async def get_user_images(current_user: User = Depends(get_current_user)):
+    logger.info(f"Getting list of images for the user: {current_user.email}")
     images = Image.objects(user_id=str(current_user.id))
     return [
         {
@@ -136,17 +148,19 @@ async def get_user_images(current_user: User = Depends(get_current_user)):
         for img in images
     ]
 
-# Get image by ID
+# Delete image
 @router.delete("/{image_id}")
 async def delete_image(
     image_id: str,
     current_user: User = Depends(get_current_user)
 ):
     try:
+        logger.info(f"Image deletion attempt {image_id} by user: {current_user.email}")
         image = Image.objects.get(id=image_id)
         
         # Verify ownership
         if str(image.user_id) != str(current_user.id):
+            logger.warning(f"Unauthorized image removal attempt {image_id} by user: {current_user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to delete this image"
@@ -161,9 +175,11 @@ async def delete_image(
         # Delete record
         image.delete()
         
+        logger.info(f"Image {image_id} successfully removed")
         return {"message": "Image deleted successfully"}
         
     except Image.DoesNotExist:
+        logger.warning(f"Attempt to delete non-existent image: {image_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Image not found"
@@ -175,10 +191,12 @@ async def serve_image(
     current_user: User = Depends(get_current_user)
 ):
     try:
+        logger.info(f"Image request {image_id} by user: {current_user.email}")
         image = Image.objects.get(id=image_id)
         
         # Verify ownership
         if str(image.user_id) != str(current_user.id):
+            logger.warning(f"Attempt to access an unauthorized image {image_id} by user {current_user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this image"
@@ -193,6 +211,7 @@ async def serve_image(
         
         # Verify the file exists
         if not os.path.exists(file_path):
+            logger.error(f"Image file not found in the path: {file_path}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Image file not found at path: {file_path}"
@@ -219,6 +238,7 @@ async def serve_image(
         }
         
     except Image.DoesNotExist:
+        logger.warning(f"Attempt to access non-existent image: {image_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Image with ID {image_id} not found in database"
@@ -231,11 +251,12 @@ async def get_image_file(
     current_user: User = Depends(get_current_user)
 ):
     try:
+        logger.info(f"Image file request {image_id} by user: {current_user.email}")
         image = Image.objects.get(id=image_id)
         
         # Verify ownership
         if str(image.user_id) != str(current_user.id):
-            print(f"Usuario no autorizado. User ID: {current_user.id}, Image User ID: {image.user_id}")
+            logger.warning(f"Unauthorized image file access attempt {image_id} by user {current_user.email}")
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Not authorized to access this image"
@@ -246,11 +267,13 @@ async def get_image_file(
         file_path = file_path.replace("\\", "/")
         
         if not os.path.exists(file_path):
+            logger.error(f"Image file not found in path: {file_path}")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Image file not found at path: {file_path}"
             )
         
+        logger.info(f"Image file {image_id} successfully sent")
         return FileResponse(
             file_path,
             media_type=f"image/{image.original_filename.split('.')[-1].lower()}",
@@ -258,7 +281,7 @@ async def get_image_file(
         )
         
     except Image.DoesNotExist:
-        print(f"Image not found: {image_id}")
+        logger.warning(f"Attempt to access non-existent image file: {image_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Image with ID {image_id} not found in database"

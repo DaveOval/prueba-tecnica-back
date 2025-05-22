@@ -30,3 +30,4 @@ mongodb_data/
 Thumbs.db
 
 uploads/
+logs/

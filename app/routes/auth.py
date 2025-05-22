@@ -7,14 +7,16 @@ from app.config import ACCESS_TOKEN_EXPIRE_MINUTES
 from datetime import timedelta
 from mongoengine.errors import DoesNotExist, NotUniqueError, ValidationError
 from app.dependencies import get_current_user
-import logging
+from app.utils.logger import setup_logger
 
 router = APIRouter()
+logger = setup_logger("auth")
 
 # Register user
 @router.post("/register", response_model=UserInDB)
 async def register(user: UserCreate):
     try:
+        logger.info(f"Attempted registration for email: {user.email}")
         user_data = user.dict()
         password = user_data.pop('password')
         user_data['password_hash'] = get_password_hash(password)
@@ -22,6 +24,7 @@ async def register(user: UserCreate):
         user = User(**user_data)
         user.save()
         
+        logger.info(f"User register succesfully: {user.email}")
         return UserInDB(
             id=str(user.id),
             name=user.name,
@@ -33,19 +36,22 @@ async def register(user: UserCreate):
             updated_at=user.updated_at
         )
     except NotUniqueError:
+        logger.warning(f"Registration attempt with duplicate email: {user.email}")
         raise HTTPException(status_code=400, detail="Email already exists")
     except ValidationError as e:
+        logger.error(f"Validation error in register: {str(e)}")
         raise HTTPException(status_code=422, detail=str(e))
 
 # Login user
 @router.post("/login")
 async def login(response: Response, user: UserLogin):
     try:
-        logging.info(f"Attempting login for email: {user.email}")
+        logger.info(f"Attempting login for email: {user.email}")
         user_in_db = User.objects.get(email=user.email)
         
+        # Check if the user is active
         if not user_in_db.is_active:
-            logging.warning(f"Login attempt for inactive user: {user.email}")
+            logger.warning(f"Login attempt for inactive user: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User account is inactive",
@@ -54,7 +60,7 @@ async def login(response: Response, user: UserLogin):
         
         password_valid = verify_password(user.password, user_in_db.password_hash)
         if not password_valid:
-            logging.warning(f"Invalid password for user: {user.email}")
+            logger.warning(f"Invalid password for user: {user.email}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -81,7 +87,7 @@ async def login(response: Response, user: UserLogin):
             max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60 
         )
         
-        logging.info(f"Successful login for user: {user.email}")
+        logger.info(f"Successful login for user: {user.email}")
         return {
             "message": "Login successful",
             "user": {
@@ -95,14 +101,14 @@ async def login(response: Response, user: UserLogin):
         }
         
     except DoesNotExist:
-        logging.warning(f"Login attempt for non-existent user: {user.email}")
+        logger.warning(f"Login attempt for non-existent user: {user.email}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except Exception as e:
-        logging.error(f"Unexpected error during login: {str(e)}")
+        logger.error(f"Unexpected error during login: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An unexpected error occurred"
@@ -115,6 +121,7 @@ async def update_profile(
     current_user: User = Depends(get_current_user)
 ):
     try:
+        logger.info(f"Attempt to update profile for user: {current_user.email}")
         update_data = user_update.dict(exclude_unset=True)
         
         if 'password' in update_data:
@@ -123,6 +130,7 @@ async def update_profile(
         current_user.update(**update_data)
         current_user.reload()
         
+        logger.info(f"Profile successfully updated for user: {current_user.email}")
         return UserInDB(
             id=str(current_user.id),
             name=current_user.name,
@@ -134,11 +142,16 @@ async def update_profile(
             updated_at=current_user.updated_at
         )
     except ValidationError as e:
+        logger.error(f"Validation error in profile update: {str(e)}")
         raise HTTPException(status_code=422, detail=str(e))
     except NotUniqueError:
+        logger.warning(f"Update attempt with duplicate email: {current_user.email}")
         raise HTTPException(status_code=400, detail="Email already exists")
 
 # Delete user
+# Well i dont think this is a good idea, but here its for the fure
+# And i dont really have time to implement in the next app or here in the API 
+# So i hope someone read this :D
 """ @router.delete("/user/{user_id}")
 async def delete_user(user_id: str):
     try:

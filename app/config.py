@@ -2,8 +2,11 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-
+# MongoDB Settings
 MONGO_URI = os.getenv("MONGO_URI")
+
+# Allowed origins for CORS
+ALLOWED_ORIGINS = "http://localhost:3000"
 
 # JWT Settings
 SECRET_KEY = os.getenv("SECRET_KEY")
