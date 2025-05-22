@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Response, Request
+from fastapi.responses import FileResponse, JSONResponse
 from app.models.images import Image
 from app.models.user import User
 from app.dependencies import get_current_user
@@ -7,6 +8,7 @@ from app.services.image_processor import proccess_image
 from typing import List
 from app.utils.validate_image import validate_image
 import os
+import base64
 
 import io
 
@@ -21,8 +23,8 @@ async def upload_image(
     validate_image(file)
     
     # Create directories if they don't exist
-    upload_dir = "uploads/original"
-    processed_dir = "uploads/processed"
+    upload_dir = os.path.join("uploads", "original").replace("\\", "/")
+    processed_dir = os.path.join("uploads", "processed").replace("\\", "/")
     os.makedirs(upload_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
     
@@ -32,13 +34,13 @@ async def upload_image(
     # Create processed path
     file_ext = file.filename.split('.')[-1]
     processed_filename = f"processed_{os.path.basename(original_path)}"
-    processed_path = os.path.join(processed_dir, processed_filename)
+    processed_path = os.path.join(processed_dir, processed_filename).replace("\\", "/")
     
     # Create image record
     image = Image(
         user_id=str(current_user.id),
         original_filename=file.filename,
-        original_path=original_path,
+        original_path=original_path.replace("\\", "/"),
         processed_path=processed_path,
         transformations=[]
     )
@@ -131,4 +133,94 @@ async def delete_image(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Image not found"
+        )
+
+@router.get("/{image_id}/serve")
+async def serve_image(
+    image_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        image = Image.objects.get(id=image_id)
+        
+        # Verify ownership
+        if str(image.user_id) != str(current_user.id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this image"
+            )
+        
+        # Check if processed file exists, if not use original
+        file_path = image.processed_path if os.path.exists(image.processed_path) else image.original_path
+        file_path = file_path.replace("\\", "/")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Image file not found at path: {file_path}"
+            )
+        
+        # Read the image file and convert to base64
+        with open(file_path, "rb") as image_file:
+            encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+        
+        # Get the file extension to determine the MIME type
+        file_ext = image.original_filename.split('.')[-1].lower()
+        mime_type = f"image/{file_ext}"
+        
+        # Return the base64 image with its MIME type
+        return {
+            "image_data": f"data:{mime_type};base64,{encoded_string}",
+            "filename": image.original_filename
+        }
+        
+    except Image.DoesNotExist:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image with ID {image_id} not found in database"
+        )
+
+@router.get("/{image_id}/file")
+async def get_image_file(
+    image_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        print(f"Buscando imagen con ID: {image_id}")
+        image = Image.objects.get(id=image_id)
+        print(f"Imagen encontrada: {image.original_filename}")
+        print(f"Ruta original: {image.original_path}")
+        print(f"Ruta procesada: {image.processed_path}")
+        
+        # Verify ownership
+        if str(image.user_id) != str(current_user.id):
+            print(f"Usuario no autorizado. User ID: {current_user.id}, Image User ID: {image.user_id}")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this image"
+            )
+        
+        # Check if processed file exists, if not use original
+        file_path = image.processed_path if os.path.exists(image.processed_path) else image.original_path
+        file_path = file_path.replace("\\", "/")
+        print(f"Usando ruta de archivo: {file_path}")
+        print(f"¿Existe el archivo?: {os.path.exists(file_path)}")
+        
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Image file not found at path: {file_path}"
+            )
+        
+        return FileResponse(
+            file_path,
+            media_type=f"image/{image.original_filename.split('.')[-1].lower()}",
+            filename=image.original_filename
+        )
+        
+    except Image.DoesNotExist:
+        print(f"No se encontró la imagen con ID: {image_id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Image with ID {image_id} not found in database"
         )
