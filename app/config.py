@@ -6,7 +6,7 @@ load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
 
 # Allowed origins for CORS
-ALLOWED_ORIGINS = "http://localhost:3000"
+ALLOWED_ORIGINS = os.getenv("FRONTEND_URL")
 
 # JWT Settings
 SECRET_KEY = os.getenv("SECRET_KEY")

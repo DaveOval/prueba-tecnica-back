@@ -1,27 +1,38 @@
 version: '3.8'
 
 services:
-  app: 
+  api:
     build: .
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
-    environment:
+    env_file:
       - .env
-    depends_on:
-      - mongo
-
-  mongo:
-    image: mongo:6.0
-    ports:
-      - "27018:27017"
+    environment:
+      - MONGO_URI=mongodb://admin:admin123@mongodb:27017/
+      - SECRET_KEY='KFC'
+      - FRONTEND_URL='http://localhost:3000'
     volumes:
-      - mongo_data:/data/db
+      - ./uploads:/app/uploads
+    depends_on:
+      - mongodb
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
     environment:
       - MONGO_INITDB_ROOT_USERNAME=admin
       - MONGO_INITDB_ROOT_PASSWORD=admin123
-      - MONGO_INITDB_DATABASE=imgbest
-      
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
 volumes:
-  mongo_data:
+  mongodb_data:
+
+networks:
+  app-network:
+    driver: bridge
